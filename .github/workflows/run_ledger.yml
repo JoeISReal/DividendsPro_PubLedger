@@ -51,5 +51,11 @@ jobs:
         run: |
           git config --global user.name 'Dividendspro Ledger Bot'
           git config --global user.email 'bot@dividendspro.io'
-          git add signals/*.jsonl
-          git diff --quiet && git diff --staged --quiet || (git commit -m "ledger: append confirmed signals" && git push)
+          # Only try to add if files exist
+          if ls signals/*.jsonl 1> /dev/null 2>&1; then
+            git add signals/*.jsonl
+            # Only commit if changes exist
+            git diff --quiet && git diff --staged --quiet || (git commit -m "ledger: append confirmed signals" && git push)
+          else
+            echo "No new signals generated."
+          fi

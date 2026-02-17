@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 * * * *'  # Run hourly
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   update-ledger:

@@ -1,0 +1,52 @@
+name: Run Signal Ledger Engine
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Run hourly
+  workflow_dispatch:
+
+jobs:
+  update-ledger:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.14' 
+          # Fallback to 3.11 if 3.14 not available on runner yet
+          # python-version: '3.11'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run Signal Engine
+        env:
+          LEDGER_PRIVATE_KEY: ${{ secrets.LEDGER_PRIVATE_KEY }}
+          DIVIDENDSPRO_DATABASE_URL: ${{ secrets.DIVIDENDSPRO_DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: python engine/signal_engine.py
+        
+      - name: Verify Chain Integrity
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        # Assuming public key is checked in as file, or we provide it
+        # For now, we skip or use a known public key if available
+        run: |
+          # python verification/verify_chain.py --public-key <KEY>
+          echo "Chain verification step placeholder"
+          
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'Dividendspro Ledger Bot'
+          git config --global user.email 'bot@dividendspro.io'
+          git add signals/*.jsonl
+          git diff --quiet && git diff --staged --quiet || (git commit -m "ledger: append confirmed signals" && git push)

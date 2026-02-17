@@ -1,0 +1,41 @@
+name: Run 30-Day Validation
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:
+
+jobs:
+  validate-ledger:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Generate Report
+        env:
+          DIVIDENDSPRO_DATABASE_URL: ${{ secrets.DIVIDENDSPRO_DATABASE_URL }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: python validation/validation_30d.py
+        
+      - name: Commit Report
+        run: |
+          git config --global user.name 'Dividendspro Validator'
+          git config --global user.email 'validator@dividendspro.io'
+          git add validation/reports/*.md
+          # Only commit if something changed
+          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: 30-day validation report" && git push)

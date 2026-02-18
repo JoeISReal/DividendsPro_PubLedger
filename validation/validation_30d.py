@@ -87,8 +87,17 @@ def generate_report():
     logger.info("Generating 30-day validation report...")
     
     df = load_signals(days=30)
+    # Always generate a report, even if empty
+    report_date = datetime.datetime.utcnow().strftime('%Y-%m-%d')
+    report_path = os.path.join(REPORTS_DIR, f"{report_date}_30d_report.md")
+
     if df.empty:
-        logger.warning("No signals found in the last 30 days.")
+        logger.warning("No signals found in the last 30 days. Generating empty report.")
+        with open(report_path, 'w') as f:
+            f.write(f"# 30-Day Validation Report ({report_date})\n\n")
+            f.write("**Status**: No signal activity recorded in the last 30 days.\n")
+            f.write("**Total Signals**: 0\n")
+        logger.info(f"Report generated: {report_path}")
         return
 
     # Mock outcome for now since we don't have historical price data accessible easily 

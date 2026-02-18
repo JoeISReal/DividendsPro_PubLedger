@@ -30,27 +30,44 @@ The ledger is stored in `ledger/signals/` as JSONL files.
 }
 ```
 
+## Installation
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/JoeISReal/DividendsPro_PubLedger.git
+    cd DividendsPro_PubLedger
+    ```
+
+2.  Install Python dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
 ## Verification
 
-You can independently audit the ledger using the provided tools.
+You can independently audit the ledger using the provided Python tools.
 
-### 1. Verify Digital Signatures
+### 1. Verification Setup
+You will need the **Public Key** to verify signatures.
+If not provided in `ledger/public_keys/dividendspro_public.pem`, request it from the repository maintainer.
+
+### 2. Verify Digital Signatures
 Ensure that a specific entry was signed by the official Dividendspro key.
 
 ```bash
-python ledger/verification/verify_signature.py --public-key <PUBKEY> --entry '{"asset":...}'
+python verification/verify_signature.py --public-key <PUBKEY> --entry '{"asset":...}'
 ```
 
-### 2. Verify Hash Chain
+### 3. Verify Hash Chain
 Ensure that the entire history is intact and unmodified.
 
 ```bash
-python ledger/verification/verify_chain.py --public-key <PUBKEY>
+python verification/verify_chain.py --public-key <PUBKEY>
 ```
 
 ## Validation Reports
 
-Automated 30-day performance reports are generated daily in `ledger/validation/reports/`.
+Automated 30-day performance reports are generated daily in `validation/reports/`.
 These reports include:
 -   Signal survival rates (>70% Mcap retention).
 -   False Positive/Negative rates.

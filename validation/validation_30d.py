@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import scipy.stats as stats
 import logging
+import requests
 from typing import List, Dict
 
 # Add parent directory to path
@@ -55,33 +56,32 @@ def load_signals(days: int = 30) -> pd.DataFrame:
 
 def fetch_market_data(tokens: List[str]) -> Dict[str, float]:
     """
-    Fetches current market cap / price for tokens.
-    Stubbed: In reality, this would query the DB or an external API.
-    For MVP, we will try to query the local DB for the latest 'market_cap' or 'price'.
+    Fetches current prices for a list of tokens using Jupiter API v2.
     """
-    conn = get_db_connection()
-    if not conn:
+    if not tokens:
         return {}
         
-    # Example query: Get latest known market cap from token_state_60s
-    # This might be slightly stale if the token hasn't traded recently.
-    # In a real production system, we'd hit Pyth or Coingecko.
-    try:
-        query = """
-            SELECT token, MAX(market_cap) as mcap
-            FROM token_state_60s
-            WHERE token = ANY(%s)
-            GROUP BY token
-        """
-        with conn.cursor() as cur:
-            cur.execute(query, (tokens,))
-            rows = cur.fetchall()
-            return {row[0]: float(row[1]) for row in rows if row[1]}
-    except Exception as e:
-        logger.error(f"Error fetching market data: {e}")
-        return {}
-    finally:
-        conn.close()
+    prices = {}
+    
+    # Chunk tokens into groups of 100 max (Jupiter limit)
+    chunk_size = 100
+    for i in range(0, len(tokens), chunk_size):
+        chunk = tokens[i:i + chunk_size]
+        ids_str = ",".join(chunk)
+        url = f"https://api.jup.ag/price/v2?ids={ids_str}"
+        
+        try:
+            resp = requests.get(url, timeout=10)
+            data = resp.json()
+            
+            for mint, info in data.get('data', {}).items():
+                if info and info.get('price'):
+                    prices[mint] = float(info['price'])
+                    
+        except Exception as e:
+            logger.error(f"Error fetching market data for chunk: {e}")
+            
+    return prices
 
 def generate_report():
     logger.info("Generating 30-day validation report...")
@@ -111,22 +111,49 @@ def generate_report():
     total_signals = len(df)
     by_state = df['state'].value_counts()
     
-    # Placeholder for statistical tests
-    # We need actual returns to do Kruskal-Wallis
-    # k_stat, p_value = stats.kruskal(group1, group2, ...)
+    # Fetch current prices for all assets
+    tokens = df['token'].unique().tolist()
+    current_prices = fetch_market_data(tokens)
+    
+    # Calculate performance
+    rois = []
+    wins = 0
+    survivors = 0
+    total_valid = 0
+    
+    for _, signal in df.iterrows():
+        token = signal.get('token')
+        entry_price = float(signal.get('price_usd', 0) or 0)
+        current_price = current_prices.get(token, 0)
+        
+        if entry_price > 0 and current_price > 0:
+            roi = (current_price - entry_price) / entry_price
+            rois.append(roi)
+            if roi > 0:
+                wins += 1
+            
+            # Survival check (approximate, using mcap if available or just price existence)
+            # A token "survives" if it still returns a valid price
+            survivors += 1
+            total_valid += 1
+            
+    avg_roi = (sum(rois) / len(rois)) * 100 if rois else 0.0
+    win_rate = (wins / total_valid) * 100 if total_valid > 0 else 0.0
+    survival_rate = (survivors / len(df)) * 100 if len(df) > 0 else 0.0
     
     with open(report_path, 'w') as f:
         f.write(f"# 30-Day Validation Report ({report_date})\n\n")
-        f.write(f"**Total Signals**: {total_signals}\n\n")
+        f.write(f"**Total Signals**: {total_signals}\n")
+        f.write(f"**Average ROI**: {avg_roi:.2f}%\n")
+        f.write(f"**Win Rate**: {win_rate:.2f}%\n")
+        f.write(f"**Survival Rate**: {survival_rate:.2f}%\n\n")
         
         f.write("## Signals by State\n")
         for state, count in by_state.items():
             f.write(f"- **{state}**: {count}\n")
             
         f.write("\n## Statistical Validation\n")
-        f.write("> *Note: Real-time return data integration pending DB history access.*\n\n")
-        f.write("- **Kruskal-Wallis Test**: Pending (Insufficient history)\n")
-        f.write("- **Survival Rate**: Pending\n")
+        f.write("- **Kruskal-Wallis Test**: Pending (Requires more history)\n")
         
         f.write("\n## Integrity Check\n")
         f.write(f"- **Hash Chain**: Verified (Assume valid for report generation)\n")

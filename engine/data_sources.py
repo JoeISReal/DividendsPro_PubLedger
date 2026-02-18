@@ -69,7 +69,8 @@ def fetch_new_verdicts(minutes_back: int = 60) -> List[Dict]:
                      
                 results.append(row)
                 
-            return results
+            # Enrich with real-time price/supply
+            return enrich_verdicts(results)
             
     except Exception as e:
         logger.error(f"Error fetching verdicts: {e}")
@@ -77,3 +78,82 @@ def fetch_new_verdicts(minutes_back: int = 60) -> List[Dict]:
     finally:
         if conn:
             conn.close()
+
+import requests
+
+def fetch_token_price(mint: str) -> float:
+    """
+    Fetches current token price from Jupiter API v2.
+    Returns 0.0 if failed.
+    """
+    try:
+        url = f"https://api.jup.ag/price/v2?ids={mint}"
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        price_str = data.get('data', {}).get(mint, {}).get('price')
+        return float(price_str) if price_str else 0.0
+    except Exception as e:
+        logger.error(f"Error fetching price for {mint}: {e}")
+        return 0.0
+
+def fetch_token_supply(mint: str) -> float:
+    """
+    Fetches token supply from Solana RPC (Helius data source).
+    Returns 0.0 if failed.
+    """
+    rpc_url = os.environ.get("SOLANA_RPC_URL", os.environ.get("HELIUS_API_KEY"))
+    # If HELIUS_API_KEY is just the key, construct URL
+    if rpc_url and "http" not in rpc_url:
+         rpc_url = f"https://mainnet.helius-rpc.com/?api-key={rpc_url}"
+         
+    if not rpc_url:
+        logger.warning("No RPC URL configured for supply check.")
+        return 0.0
+
+    try:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTokenSupply",
+            "params": [mint]
+        }
+        resp = requests.post(rpc_url, json=payload, timeout=5)
+        data = resp.json()
+        ui_amount = data.get('result', {}).get('value', {}).get('uiAmount')
+        return float(ui_amount) if ui_amount is not None else 0.0
+    except Exception as e:
+        logger.error(f"Error fetching supply for {mint}: {e}")
+        return 0.0
+
+def enrich_verdicts(results: List[Dict]) -> List[Dict]:
+    """
+    Enriches verdict schemas with real-time price and mcap.
+    """
+    enriched = []
+    for row in results:
+        token = row.get('token')
+        if not token:
+            enriched.append(row)
+            continue
+            
+        # Fetch Data
+        price = fetch_token_price(token)
+        supply = fetch_token_supply(token)
+        mcap = price * supply
+        
+        # Add to row
+        row['price_usd'] = price
+        row['market_cap'] = mcap
+        row['supply_total'] = supply
+        
+        enriched.append(row)
+    return enriched
+
+# Patch fetch_new_verdicts to call enrich
+# Note: In a cleaner impl, we'd rename functions, but to keep diff small:
+# We will wrap the return of fetch_new_verdicts in the caller (signal_engine.py)
+# OR we can modify fetch_new_verdicts here. Let's modify here.
+
+# ... (We will modify fetch_new_verdicts in a separate block/tool call if needed, 
+# but better to just ADD the helper functions first, then modify fetch_new_verdicts logic)
+
